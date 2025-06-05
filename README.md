@@ -87,11 +87,11 @@ This project is built with:
 
 ## 🖼️ App Screenshots
 
-### 🔹 Home Page
+### 🔹 Wallet connection
 ![Screenshot 1](public/one.png)
 
-### 🔹 Wallet Connection
+### 🔹 Account details & Send ETH
 ![Screenshot 2](public/two.png)
 
-### 🔹 Send Transaction UI
+### 🔹 Transaction history 
 ![Screenshot 3](public/three.png)
