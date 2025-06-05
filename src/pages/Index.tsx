@@ -1,12 +1,18 @@
-
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { Wallet, Send, RefreshCw, ExternalLink, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import Header from '@/components/Header';
+import ConnectionCard from '@/components/ConnectionCard';
+import AccountInfoCard from '@/components/AccountInfoCard';
+import SendTransactionCard from '@/components/SendTransactionCard';
+import TransactionHistory from '@/components/TransactionHistory';
+
+// Define supported networks with their chain IDs and details
+const SUPPORTED_NETWORKS = {
+  '1': { name: 'Ethereum Mainnet', chainId: '0x1', rpcUrl: 'https://mainnet.infura.io/v3/YOUR_INFURA_KEY', explorer: 'https://etherscan.io' },
+  '11155111': { name: 'Sepolia', chainId: '0xaa36a7', rpcUrl: 'https://sepolia.infura.io/v3/YOUR_INFURA_KEY', explorer: 'https://sepolia.etherscan.io' },
+  '59141': { name: 'Linea Sepolia', chainId: '0xE705', rpcUrl: 'https://linea-sepolia.infura.io/v3/YOUR_INFURA_KEY', explorer: 'https:///linea-sepolia.etherscan.io' },
+};
 
 const Index = () => {
   const [account, setAccount] = useState<string>('');
@@ -16,14 +22,13 @@ const Index = () => {
   const [recipientAddress, setRecipientAddress] = useState('');
   const [sendAmount, setSendAmount] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [currentNetwork, setCurrentNetwork] = useState<string>('1');
   const { toast } = useToast();
 
-  // Check if MetaMask is installed
-  const isMetaMaskInstalled = () => {
+  const isMetaMaskInstalled = (): boolean => {
     return typeof window !== 'undefined' && typeof window.ethereum !== 'undefined';
   };
 
-  // Connect to MetaMask wallet
   const connectWallet = async () => {
     if (!isMetaMaskInstalled()) {
       toast({
@@ -60,7 +65,6 @@ const Index = () => {
     }
   };
 
-  // Fetch wallet balance
   const fetchBalance = async (address: string) => {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -71,7 +75,6 @@ const Index = () => {
     }
   };
 
-  // Refresh balance
   const refreshBalance = async () => {
     if (!account) return;
     setIsRefreshing(true);
@@ -83,7 +86,6 @@ const Index = () => {
     });
   };
 
-  // Send ETH transaction
   const sendTransaction = async () => {
     if (!account || !recipientAddress || !sendAmount) {
       toast({
@@ -109,7 +111,6 @@ const Index = () => {
         description: `Transaction hash: ${tx.hash.slice(0, 10)}...`,
       });
 
-      // Wait for transaction confirmation
       await tx.wait();
       
       toast({
@@ -117,7 +118,6 @@ const Index = () => {
         description: "Your transaction has been confirmed on the blockchain",
       });
 
-      // Refresh balance and clear form
       await fetchBalance(account);
       setRecipientAddress('');
       setSendAmount('');
@@ -133,21 +133,125 @@ const Index = () => {
     }
   };
 
-  // Disconnect wallet
   const disconnectWallet = () => {
     setAccount('');
     setBalance('0');
     setRecipientAddress('');
     setSendAmount('');
+    setCurrentNetwork('1');
     toast({
       title: "Wallet Disconnected",
       description: "Successfully disconnected from MetaMask",
     });
   };
 
-  // Check for account changes
+  async function switchNetwork(chainId: string) {
+    if (!isMetaMaskInstalled()) {
+      toast({
+        title: 'MetaMask Not Found',
+        description: 'Please install MetaMask to switch networks',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: SUPPORTED_NETWORKS[chainId].chainId }],
+      });
+      setCurrentNetwork(chainId);
+      toast({
+        title: 'Network Switched',
+        description: `Successfully switched to ${SUPPORTED_NETWORKS[chainId].name}`,
+      });
+      if (account) {
+        await fetchBalance(account);
+      }
+    } catch (error: any) {
+      if (error.code === 4902) {
+        await addNetwork(chainId);
+      } else {
+        console.error('Error switching network:', error);
+        toast({
+          title: 'Network Switch Failed',
+          description: 'Failed to switch network',
+          variant: 'destructive',
+        });
+      }
+    }
+  }
+
+  async function addNetwork(chainId: string) {
+    const network = SUPPORTED_NETWORKS[chainId];
+    if (!network) {
+      toast({
+        title: 'Invalid Network',
+        description: 'Selected network is not supported',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [
+          {
+            chainId: network.chainId,
+            chainName: network.name,
+            rpcUrls: [network.rpcUrl],
+            blockExplorerUrls: [network.explorer],
+            nativeCurrency: {
+              name: 'Ether',
+              symbol: 'ETH',
+              decimals: 18,
+            },
+          },
+        ],
+      });
+      setCurrentNetwork(chainId);
+      toast({
+        title: 'Network Added',
+        description: `Added and switched to ${network.name}`,
+      });
+      if (account) {
+        await fetchBalance(account);
+      }
+    } catch (error) {
+      console.error('Error adding network:', error);
+      toast({
+        title: 'Failed to Add Network',
+        description: 'Could not add the network to MetaMask',
+        variant: 'destructive',
+      });
+    }
+  }
+
+  async function checkCurrentNetwork() {
+    if (!isMetaMaskInstalled()) return;
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const network = await provider.getNetwork();
+      const chainId = network.chainId.toString();
+      if (SUPPORTED_NETWORKS[chainId]) {
+        setCurrentNetwork(chainId);
+      } else {
+        setCurrentNetwork('');
+        toast({
+          title: 'Unsupported Network',
+          description: 'Please switch to a supported network (Mainnet, Sepolia, or Goerli)',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Error checking network:', error);
+    }
+  }
+
   useEffect(() => {
     if (isMetaMaskInstalled()) {
+      checkCurrentNetwork();
       window.ethereum.on('accountsChanged', (accounts: string[]) => {
         if (accounts.length === 0) {
           disconnectWallet();
@@ -157,184 +261,80 @@ const Index = () => {
         }
       });
 
-      window.ethereum.on('chainChanged', () => {
-        window.location.reload();
+      window.ethereum.on('chainChanged', (chainId: string) => {
+        const newChainId = parseInt(chainId, 16).toString();
+        if (SUPPORTED_NETWORKS[newChainId]) {
+          setCurrentNetwork(newChainId);
+          toast({
+            title: 'Network Changed',
+            description: `Now connected to ${SUPPORTED_NETWORKS[newChainId].name}`,
+          });
+          if (account) {
+            fetchBalance(account);
+          }
+        } else {
+          setCurrentNetwork('');
+          toast({
+            title: 'Unsupported Network',
+            description: 'Please switch to a supported network',
+            variant: 'destructive',
+          });
+        }
       });
-    }
 
-    return () => {
-      if (isMetaMaskInstalled()) {
+      return () => {
         window.ethereum.removeAllListeners('accountsChanged');
         window.ethereum.removeAllListeners('chainChanged');
-      }
-    };
-  }, []);
+      };
+    }
+  }, [account]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <div className="flex items-center justify-center mb-4">
-            <div className="bg-gradient-to-r from-purple-500 to-blue-500 p-3 rounded-full">
-              <Wallet className="h-8 w-8 text-white" />
+  <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div className="container mx-auto px-4 py-8">
+      <Header />
+      <div className="max-w-4xl mx-auto">
+        {!account ? (
+          <ConnectionCard 
+            isMetaMaskInstalled={isMetaMaskInstalled} 
+            isConnecting={isConnecting} 
+            connectWallet={connectWallet} 
+          />
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-6">
+              <AccountInfoCard 
+                account={account}
+                balance={balance}
+                isRefreshing={isRefreshing}
+                refreshBalance={refreshBalance}
+                disconnectWallet={disconnectWallet}
+                currentNetwork={currentNetwork}
+                supportedNetworks={SUPPORTED_NETWORKS}
+                switchNetwork={switchNetwork}
+              />
+              <TransactionHistory 
+                account={account}
+                currentNetwork={currentNetwork}
+              />
             </div>
+            <SendTransactionCard 
+              recipientAddress={recipientAddress}
+              setRecipientAddress={setRecipientAddress}
+              sendAmount={sendAmount}
+              setSendAmount={setSendAmount}
+              isSending={isSending}
+              sendTransaction={sendTransaction}
+            />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-2">Web3 Wallet</h1>
-          <p className="text-gray-400 text-lg">Connect, manage, and transact with Ethereum</p>
-        </div>
-
-        {/* Main Content */}
-        <div className="max-w-4xl mx-auto">
-          {!account ? (
-            /* Connection Card */
-            <Card className="bg-black/20 backdrop-blur-lg border-purple-500/20 text-white">
-              <CardHeader className="text-center">
-                <CardTitle className="text-2xl mb-4">Connect Your Wallet</CardTitle>
-                <p className="text-gray-400">
-                  Connect your MetaMask wallet to start using the application
-                </p>
-              </CardHeader>
-              <CardContent className="text-center">
-                {!isMetaMaskInstalled() ? (
-                  <div className="space-y-4">
-                    <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto" />
-                    <p className="text-yellow-400">MetaMask is not installed</p>
-                    <Button
-                      className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
-                      onClick={() => window.open('https://metamask.io/', '_blank')}
-                    >
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Install MetaMask
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    onClick={connectWallet}
-                    disabled={isConnecting}
-                    className="bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white px-8 py-3 text-lg"
-                  >
-                    {isConnecting ? (
-                      <>
-                        <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
-                        Connecting...
-                      </>
-                    ) : (
-                      <>
-                        <Wallet className="h-5 w-5 mr-2" />
-                        Connect MetaMask
-                      </>
-                    )}
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            /* Wallet Dashboard */
-            <div className="grid gap-6 md:grid-cols-2">
-              {/* Account Info Card */}
-              <Card className="bg-black/20 backdrop-blur-lg border-purple-500/20 text-white">
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <span>Account Details</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={disconnectWallet}
-                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                    >
-                      Disconnect
-                    </Button>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label className="text-gray-400">Wallet Address</Label>
-                    <p className="font-mono text-sm bg-gray-800/50 p-2 rounded break-all">
-                      {account}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-400 flex items-center gap-2">
-                      ETH Balance
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={refreshBalance}
-                        disabled={isRefreshing}
-                        className="h-6 w-6 p-0"
-                      >
-                        <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-                      </Button>
-                    </Label>
-                    <p className="text-2xl font-bold text-green-400">
-                      {parseFloat(balance).toFixed(4)} ETH
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Send Transaction Card */}
-              <Card className="bg-black/20 backdrop-blur-lg border-purple-500/20 text-white">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Send className="h-5 w-5" />
-                    Send ETH
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="recipient">Recipient Address</Label>
-                    <Input
-                      id="recipient"
-                      value={recipientAddress}
-                      onChange={(e) => setRecipientAddress(e.target.value)}
-                      placeholder="0x..."
-                      className="bg-gray-800/50 border-gray-600 text-white"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="amount">Amount (ETH)</Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      step="0.001"
-                      value={sendAmount}
-                      onChange={(e) => setSendAmount(e.target.value)}
-                      placeholder="0.1"
-                      className="bg-gray-800/50 border-gray-600 text-white"
-                    />
-                  </div>
-                  <Button
-                    onClick={sendTransaction}
-                    disabled={isSending || !recipientAddress || !sendAmount}
-                    className="w-full bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600"
-                  >
-                    {isSending ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        Sending...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4 mr-2" />
-                        Send Transaction
-                      </>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="text-center mt-12 text-gray-500">
-          <p>Built with Ethereum & MetaMask integration</p>
-        </div>
+        )}
+      </div>  
+      <div className="text-center mt-12 text-gray-500">
+        <p>Built with Ethereum & MetaMask integration</p>
       </div>
     </div>
-  );
+  </div>
+);
 };
 
 export default Index;
