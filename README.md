@@ -88,10 +88,10 @@ This project is built with:
 ## 🖼️ App Screenshots
 
 ### 🔹 Home Page
-![Screenshot 1](public/Screenshot%202025-06-06%20001216.png)
+![Screenshot 1](public/one.png)
 
 ### 🔹 Wallet Connection
-![Screenshot 2](public/Screenshot%202025-06-06%20001406.png)
+![Screenshot 2](public/two.png)
 
 ### 🔹 Send Transaction UI
-![Screenshot 3](public/Screenshot%202025-06-06%20001427.png)
+![Screenshot 3](public/three.png)
